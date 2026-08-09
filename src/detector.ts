@@ -27,6 +27,8 @@ const PYTHON_SCOPE =
 const PYTHON_DECLARATION =
   /\b(?:async\s+)?def\s+[A-Za-z_]\w*\s*\(|\bclass\s+[A-Za-z_]\w*\s*(?:\([^)]*\))?\s*:/u;
 const PYTHON_DEF_SEARCH = /^\^?\s*(?:async\s+)?def\s/u;
+const PYTHON_FUNCTION_SEARCH =
+  /^\^?\s*(?:async\s+)?def\s+(?:[A-Za-z_]\w*|\[[^\]]+\]\\w\*)\s*\(/u;
 const CALL_OR_DECORATOR = /(?:\b[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\s*\(|@[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)/u;
 const VALUE_OPTIONS: Record<string, true> = {
   "-A": true,
@@ -112,8 +114,9 @@ function classifies(candidate: Candidate): boolean {
   const normalized = normalizeRegexSyntax(candidate.pattern);
   const hasPythonScope = PYTHON_SCOPE.test(`${candidate.scope} ${candidate.pattern}`);
   const hasNamedDeclaration = PYTHON_DECLARATION.test(normalized);
-  const hasDefinitionSearch = hasPythonScope && PYTHON_DEF_SEARCH.test(normalized);
-  const hasDeclaration = hasNamedDeclaration || hasDefinitionSearch;
+  const hasDefinitionSearch = PYTHON_DEF_SEARCH.test(normalized);
+  const hasStrongDefinitionSearch = PYTHON_FUNCTION_SEARCH.test(normalized);
+  const hasDeclaration = hasNamedDeclaration || hasStrongDefinitionSearch || (hasPythonScope && hasDefinitionSearch);
   const hasPython = hasDeclaration || hasPythonScope;
   const hasSymbol = hasDeclaration || CALL_OR_DECORATOR.test(normalized);
   return hasPython && hasSymbol;

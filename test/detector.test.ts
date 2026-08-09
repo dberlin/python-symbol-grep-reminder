@@ -11,6 +11,16 @@ const positive: Array<[string, ToolCallLike]> = [
     { toolName: "grep", input: { pattern: String.raw`^\s*(?:async\s+)?def\s+`, path: "src/**/*.py" } },
   ],
   [
+    "built-in grep for Python function definitions from the repository root",
+    {
+      toolName: "grep",
+      input: {
+        pattern: String.raw`^\s*(?:async\s+)?def\s+[A-Za-z_]\w*\s*\(`,
+        path: ".",
+      },
+    },
+  ],
+  [
     "built-in grep for a Python call",
     { toolName: "grep", input: { pattern: String.raw`\bload_user\s*\(`, path: "src/**/*.py" } },
   ],
