@@ -6,6 +6,7 @@ export const REMINDER =
 
 export default function pythonSymbolGrepReminder(pi: ExtensionAPI): void {
   const pending = new Set<string>();
+  let sessionTotal = 0;
 
   pi.on("tool_call", event => {
     try {
@@ -15,8 +16,29 @@ export default function pythonSymbolGrepReminder(pi: ExtensionAPI): void {
     }
   });
 
-  pi.on("tool_result", event => {
+  pi.on("tool_result", (event, context) => {
     if (!pending.delete(event.toolCallId)) return;
+
+    sessionTotal++;
+    try {
+      pi.appendEntry("python-symbol-grep-reminder", {
+        timestamp: Date.now(),
+        toolName: event.toolName,
+        toolCallId: event.toolCallId,
+        sessionTotal,
+      });
+    } catch {
+      // Observability must never prevent reminder delivery.
+    }
+
+    try {
+      if (context.hasUI) {
+        context.ui.notify(`Python symbol grep reminder sent · session total: ${sessionTotal}`, "info");
+      }
+    } catch {
+      // Observability must never prevent reminder delivery.
+    }
+
     return {
       content: [{ type: "text" as const, text: REMINDER }, ...event.content],
     };
@@ -24,5 +46,6 @@ export default function pythonSymbolGrepReminder(pi: ExtensionAPI): void {
 
   pi.on("session_shutdown", () => {
     pending.clear();
+    sessionTotal = 0;
   });
 }
