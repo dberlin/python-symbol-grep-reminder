@@ -26,9 +26,11 @@ This catches mixed declaration/return/call navigation patterns without treating 
 
 ## Architecture
 
-Add a side-effect-free helper in `src/detector.ts` that classifies the normalized pattern's alternatives. `classifies` will combine its result with the existing declaration, scope, call, and decorator checks. Candidate extraction, shell tokenization, context-mode traversal, lifecycle correlation, and reminder text remain unchanged.
+Add a side-effect-free helper in `src/detector.ts` that classifies the normalized pattern's alternatives. `classifies` will combine its result with the existing declaration, scope, call, and decorator checks. Candidate traversal, context-mode traversal, lifecycle correlation, and reminder text remain unchanged.
 
-The helper will use bounded string scanning rather than a general-purpose regex parser. The detector already operates on short tool-call input, and only escaped-pipe handling plus branch trimming is required for this contract.
+Shell candidate extraction will split commands only at unquoted, unescaped shell separators before matching `grep` or `rg`. Quoted alternation pipes therefore remain part of the search pattern, while real pipelines remain separate commands.
+
+The structural helper will use bounded string scanning rather than a general-purpose regex parser. The detector already operates on short tool-call input, and only escaped-pipe handling plus branch trimming is required for this contract.
 
 ## False-Positive Boundaries
 
@@ -47,6 +49,7 @@ Table-driven detector tests will cover:
 - the reported `class ControllerModelStore|def load|def _read_state|return None` pattern from repository scope;
 - grouped and regex-escaped declaration alternatives;
 - return/call alternatives with explicit Python scope;
+- quoted alternations passed through the shell command surface;
 - generic, escaped-pipe, single-structural-branch, and non-Python negatives.
 
 The focused detector test must fail before implementation and pass afterward. Final verification will run the complete Bun test suite, TypeScript typecheck, and a direct smoke invocation of the reported pattern.

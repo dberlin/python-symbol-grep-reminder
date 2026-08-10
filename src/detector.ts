@@ -18,7 +18,7 @@ const CONTEXT_EXECUTE_NAME =
   /^(?:(?:mcp__)?context[_-]?mode(?:__|_)?)?ctx_(?:batch_execute|execute(?:_file)?)$/iu;
 const CONTEXT_WRITE_PATH = /^xd:\/\/mcp__context_mode_ctx_(?:batch_execute|execute(?:_file)?)$/iu;
 const SEARCH_INVOCATION =
-  /(?:^|[\n;&|]\s*)(?:command\s+)?(?:[\w.-]+\/)?(?<executable>rg|grep)\b(?<arguments>[^\n;&|]*)/giu;
+  /^\s*(?:command\s+)?(?:[\w.-]+\/)?(?<executable>rg|grep)\b(?<arguments>[\s\S]*)$/iu;
 const EMBEDDED_SEARCH_INVOCATION =
   /(?:execSync|spawnSync)\s*\(\s*(?<quote>["'`])(?:command\s+)?(?:[\w.-]+\/)?(?<executable>rg|grep)\b(?<arguments>[\s\S]*?)\k<quote>/giu;
 const SHELL_LANGUAGE = /^(?:bash|sh|shell|zsh)$/iu;
@@ -30,6 +30,10 @@ const PYTHON_DEF_SEARCH = /^\^?\s*(?:async\s+)?def\s/u;
 const PYTHON_FUNCTION_SEARCH =
   /^\^?\s*(?:async\s+)?def\s+(?:[A-Za-z_]\w*|\[[^\]]+\]\\w\*)\s*\(/u;
 const CALL_OR_DECORATOR = /(?:\b[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\s*\(|@[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)/u;
+const STRUCTURAL_DECLARATION_ALTERNATIVE =
+  /^\s*\^?\s*(?:(?:\(\?:|\()\s*)*(?:(?:async\s+)?def\s+[A-Za-z_]\w*|class\s+[A-Za-z_]\w*)/u;
+const STRUCTURAL_RETURN_OR_CALL_ALTERNATIVE =
+  /^\s*\^?\s*(?:(?:\(\?:|\()\s*)*(?:return(?:\s+|$)|[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*\s*\()/u;
 const VALUE_OPTIONS: Record<string, true> = {
   "-A": true,
   "-B": true,
@@ -110,6 +114,53 @@ function normalizeRegexSyntax(value: string): string {
     .replace(/\\([()[\]{}.^$+*?|@])/gu, "$1");
 }
 
+type StructuralBranch = "declaration" | "other";
+
+function structuralBranchKind(pattern: string): StructuralBranch | undefined {
+  const normalized = normalizeRegexSyntax(pattern);
+  if (STRUCTURAL_DECLARATION_ALTERNATIVE.test(normalized)) {
+    return "declaration";
+  }
+  return STRUCTURAL_RETURN_OR_CALL_ALTERNATIVE.test(normalized) ? "other" : undefined;
+}
+
+function classifiesStructuralAlternation(pattern: string, hasPythonScope: boolean): boolean {
+  let branchStart = 0;
+  let precedingBackslashes = 0;
+  let structuralBranches = 0;
+  let hasDeclaration = false;
+  let hasAlternation = false;
+
+  const classifyBranch = (branchEnd: number): void => {
+    const kind = structuralBranchKind(pattern.slice(branchStart, branchEnd));
+    if (kind !== undefined) {
+      structuralBranches += 1;
+      hasDeclaration ||= kind === "declaration";
+    }
+  };
+
+  for (let index = 0; index < pattern.length; index += 1) {
+    const character = pattern[index];
+    if (character === "\\") {
+      precedingBackslashes += 1;
+      continue;
+    }
+    if (character === "|" && precedingBackslashes % 2 === 0) {
+      hasAlternation = true;
+      classifyBranch(index);
+      branchStart = index + 1;
+    }
+    precedingBackslashes = 0;
+  }
+
+  if (!hasAlternation) {
+    return false;
+  }
+  classifyBranch(pattern.length);
+  return structuralBranches >= 2 && (hasDeclaration || hasPythonScope);
+}
+
+
 function classifies(candidate: Candidate): boolean {
   const normalized = normalizeRegexSyntax(candidate.pattern);
   const hasPythonScope = PYTHON_SCOPE.test(`${candidate.scope} ${candidate.pattern}`);
@@ -117,8 +168,9 @@ function classifies(candidate: Candidate): boolean {
   const hasDefinitionSearch = PYTHON_DEF_SEARCH.test(normalized);
   const hasStrongDefinitionSearch = PYTHON_FUNCTION_SEARCH.test(normalized);
   const hasDeclaration = hasNamedDeclaration || hasStrongDefinitionSearch || (hasPythonScope && hasDefinitionSearch);
-  const hasPython = hasDeclaration || hasPythonScope;
-  const hasSymbol = hasDeclaration || CALL_OR_DECORATOR.test(normalized);
+  const hasStructuralAlternation = classifiesStructuralAlternation(candidate.pattern, hasPythonScope);
+  const hasPython = hasDeclaration || hasStructuralAlternation || hasPythonScope;
+  const hasSymbol = hasDeclaration || hasStructuralAlternation || CALL_OR_DECORATOR.test(normalized);
   return hasPython && hasSymbol;
 }
 
@@ -175,6 +227,40 @@ function tokenizeShellArguments(argumentsText: string): string[] {
   return tokens;
 }
 
+function splitShellCommands(command: string): string[] {
+  const commands: string[] = [];
+  let commandStart = 0;
+  let quote: "'" | "\"" | "`" | undefined;
+
+  for (let index = 0; index < command.length; index += 1) {
+    const character = command[index]!;
+    if (quote !== undefined) {
+      if (character === quote) {
+        quote = undefined;
+      } else if (character === "\\" && quote !== "'" && index + 1 < command.length) {
+        index += 1;
+      }
+      continue;
+    }
+
+    if (character === "'" || character === "\"" || character === "`") {
+      quote = character;
+      continue;
+    }
+    if (character === "\\" && index + 1 < command.length) {
+      index += 1;
+      continue;
+    }
+    if (character === "\n" || character === ";" || character === "&" || character === "|") {
+      commands.push(command.slice(commandStart, index));
+      commandStart = index + 1;
+    }
+  }
+
+  commands.push(command.slice(commandStart));
+  return commands;
+}
+
 function extractSearchPatterns(executable: "grep" | "rg", argumentsText: string): string[] {
   const patterns: string[] = [];
   const tokens = tokenizeShellArguments(argumentsText);
@@ -229,11 +315,23 @@ function extractSearchPatterns(executable: "grep" | "rg", argumentsText: string)
 }
 
 function extractCommandCandidates(command: string, embeddedOnly = false): Candidate[] {
-  const invocation = embeddedOnly ? EMBEDDED_SEARCH_INVOCATION : SEARCH_INVOCATION;
   const candidates: Candidate[] = [];
-  for (const match of command.matchAll(invocation)) {
-    const executable = match.groups?.executable;
-    const argumentsText = match.groups?.arguments ?? "";
+  if (embeddedOnly) {
+    for (const match of command.matchAll(EMBEDDED_SEARCH_INVOCATION)) {
+      const executable = match.groups?.executable;
+      const argumentsText = match.groups?.arguments ?? "";
+      if (executable !== "grep" && executable !== "rg") continue;
+      for (const pattern of extractSearchPatterns(executable, argumentsText)) {
+        candidates.push({ pattern, scope: argumentsText });
+      }
+    }
+    return candidates;
+  }
+
+  for (const shellCommand of splitShellCommands(command)) {
+    const match = SEARCH_INVOCATION.exec(shellCommand);
+    const executable = match?.groups?.executable;
+    const argumentsText = match?.groups?.arguments ?? "";
     if (executable !== "grep" && executable !== "rg") continue;
     for (const pattern of extractSearchPatterns(executable, argumentsText)) {
       candidates.push({ pattern, scope: argumentsText });

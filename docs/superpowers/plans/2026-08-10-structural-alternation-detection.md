@@ -4,7 +4,7 @@
 
 **Goal:** Detect conservative OR-combinations of Python declaration, return, and call search patterns, including `class ControllerModelStore|def load|def _read_state|return None`.
 
-**Architecture:** Keep candidate extraction unchanged. Add branch-aware structural classification inside `src/detector.ts`: split only on unescaped alternation pipes, classify each normalized branch, and require two structural branches plus either declaration evidence or existing Python scope.
+**Architecture:** Add branch-aware structural classification inside `src/detector.ts`: split only on unescaped alternation pipes, classify each normalized branch, and require two structural branches plus either declaration evidence or existing Python scope. Split shell commands only on unquoted, unescaped separators so quoted alternations reach the classifier intact.
 
 **Tech Stack:** TypeScript 7, Bun test runner, existing side-effect-free detector API.
 
@@ -21,12 +21,12 @@
 ### Task 1: Structural Alternation Classifier
 
 **Files:**
-- Modify: `test/detector.test.ts:4-152`
-- Modify: `src/detector.ts:25-123`
+- Modify: `test/detector.test.ts:4-213`
+- Modify: `src/detector.ts:20-378`
 
 **Interfaces:**
 - Consumes: existing `classifies(candidate: Candidate): boolean` and `normalizeRegexSyntax(value: string): string`.
-- Produces: private `classifiesStructuralAlternation(pattern: string, hasPythonScope: boolean): boolean`; no exported API changes.
+- Produces: private `classifiesStructuralAlternation(pattern: string, hasPythonScope: boolean): boolean` and quote-aware shell command segmentation; no exported API changes.
 
 - [ ] **Step 1: Add failing positive and negative fixtures**
 
@@ -60,6 +60,15 @@ Add these table entries to `positive`:
     input: {
       pattern: String.raw`return\s+None|controller\.load\(`,
       path: "src/**/*.py",
+    },
+  },
+],
+[
+  "shell rg for quoted alternated Python structures",
+  {
+    toolName: "bash",
+    input: {
+      command: "rg 'class ControllerModelStore|def load|def _read_state|return None' -g '*.py' src",
     },
   },
 ],
@@ -98,7 +107,7 @@ Plausible regression caught: treating any `|`, any `return`, or any call-like br
 
 Run: `bun test test/detector.test.ts`
 
-Expected: the three new positive fixtures fail with `Expected: true, Received: false`; existing and new negative fixtures pass.
+Expected: the reported built-in, grouped, and quoted-shell fixtures fail with `Expected: true, Received: false`; existing and new negative fixtures pass.
 
 - [ ] **Step 3: Add the minimal private classifier**
 
@@ -123,7 +132,9 @@ function classifiesStructuralAlternation(pattern: string, hasPythonScope: boolea
 }
 ```
 
-Call the helper from `classifies` using `candidate.pattern` and the already computed `hasPythonScope`. Treat a true result as both Python and symbol evidence. Do not alter candidate extraction, tokenization, or exported types.
+Replace regex-only shell command boundary extraction with a quote-aware scanner. It must split on newline, `;`, `&`, and `|` only outside quotes and when the separator is not escaped. Apply the existing invocation matcher and pattern tokenizer independently to each resulting shell command.
+
+Call the helper from `classifies` using `candidate.pattern` and the already computed `hasPythonScope`. Treat a true result as both Python and symbol evidence. Preserve existing pattern tokenization and exported types.
 
 - [ ] **Step 4: Run the focused detector test and verify GREEN**
 

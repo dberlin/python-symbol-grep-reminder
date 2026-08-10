@@ -97,6 +97,45 @@ const positive: Array<[string, ToolCallLike]> = [
       },
     },
   ],
+  [
+    "built-in grep for alternated Python structures",
+    {
+      toolName: "grep",
+      input: {
+        pattern: "class ControllerModelStore|def load|def _read_state|return None",
+        path: ".",
+      },
+    },
+  ],
+  [
+    "grouped alternated Python structures",
+    {
+      toolName: "grep",
+      input: {
+        pattern: String.raw`^(?:class\s+ControllerModelStore|def\s+load|return\s+None)$`,
+        path: ".",
+      },
+    },
+  ],
+  [
+    "return and call alternatives in Python scope",
+    {
+      toolName: "grep",
+      input: {
+        pattern: String.raw`return\s+None|controller\.load\(`,
+        path: "src/**/*.py",
+      },
+    },
+  ],
+  [
+    "shell rg for quoted alternated Python structures",
+    {
+      toolName: "bash",
+      input: {
+        command: "rg 'class ControllerModelStore|def load|def _read_state|return None' -g '*.py' src",
+      },
+    },
+  ],
 ];
 
 const negative: Array<[string, ToolCallLike]> = [
@@ -147,6 +186,28 @@ const negative: Array<[string, ToolCallLike]> = [
         language: "javascript",
         code: "const example = `\nrg '^def foo\\(' -g '*.py'\n`;\nconsole.log(example);",
       },
+    },
+  ],
+  [
+    "generic alternation",
+    { toolName: "grep", input: { pattern: "TODO|FIXME", path: "src/**/*.py" } },
+  ],
+  [
+    "single structural alternative mixed with prose",
+    { toolName: "grep", input: { pattern: "TODO|return code", path: "src/**/*.py" } },
+  ],
+  [
+    "escaped literal pipe",
+    {
+      toolName: "grep",
+      input: { pattern: String.raw`def load\|return None`, path: "." },
+    },
+  ],
+  [
+    "return and call alternatives outside Python scope",
+    {
+      toolName: "grep",
+      input: { pattern: String.raw`return null|controller\.load\(`, path: "src/**/*.ts" },
     },
   ],
 ];
