@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { isPythonSymbolGrepCall } from "./detector";
 
 export const REMINDER =
-  "Python symbol search detected: use the LSP symbol/definition/references tools instead of grep/rg for Python code navigation.";
+  "<IMPORTANT-NOTE>Python symbol search detected: use the LSP symbol/definition/references tools instead of grep/rg for Python code navigation.</IMPORTANT-NOTE>";
 
 export default function pythonSymbolGrepReminder(pi: ExtensionAPI): void {
   const pending = new Set<string>();

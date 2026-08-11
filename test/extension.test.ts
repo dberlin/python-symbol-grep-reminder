@@ -35,13 +35,19 @@ const result = {
 } as unknown as ToolResultEvent;
 
 describe("Python symbol grep reminder extension", () => {
-  test("prepends a reminder and leaves original content untouched", async () => {
+  test("prepends a tagged reminder and leaves original content untouched", async () => {
     const handlers = loadHandlers();
     await handlers.get("tool_call")!(matchingCall as never, {} as never);
     const patch = await handlers.get("tool_result")!(result as never, {} as never);
 
     expect(patch).toEqual({
-      content: [{ type: "text", text: REMINDER }, ...result.content],
+      content: [
+        {
+          type: "text",
+          text: "<IMPORTANT-NOTE>Python symbol search detected: use the LSP symbol/definition/references tools instead of grep/rg for Python code navigation.</IMPORTANT-NOTE>",
+        },
+        ...result.content,
+      ],
     });
     expect(result.content).toEqual([{ type: "text", text: "src/users.py:10:def load_user(" }]);
     expect(patch).not.toHaveProperty("details");
